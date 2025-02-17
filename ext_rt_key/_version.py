@@ -1,3 +1,4 @@
+
 # This file helps to compute a version number in source trees obtained from
 # git-archive tarball (such as those provided by githubs download-from-tag
 # feature). Distribution tarballs (built by setup.py sdist) and build
@@ -50,9 +51,9 @@ def get_config() -> VersioneerConfig:
     cfg = VersioneerConfig()
     cfg.VCS = "git"
     cfg.style = "pep440"
-    cfg.tag_prefix = ""
-    cfg.parentdir_prefix = ""
-    cfg.versionfile_source = "iserv/tools/application_monitoring/_version.py"
+    cfg.tag_prefix = "v"
+    cfg.parentdir_prefix = "ext_rt_key-"
+    cfg.versionfile_source = "ext_rt_key/_version.py"
     cfg.verbose = False
     return cfg
 
