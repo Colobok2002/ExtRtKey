@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
 from rich.syntax import Syntax
 
-from app_name import __appname__
+from ext_rt_key import __appname__
 
 
 class Settings(BaseSettings):

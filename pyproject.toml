@@ -1,5 +1,5 @@
 [project]
-name = "app_name"
+name = "ext_rt_key"
 version = "0.1.0"
 description = ""
 authors = [{ name = "Ilya Barinov", email = "ilya.bv.2002@bk.ru" }]
@@ -102,7 +102,7 @@ exclude = [
 line-length = 100
 indent-width = 4
 target-version = "py312"
-namespace-packages = ["app_name"]
+namespace-packages = ["ext_rt_key"]
 
 [tool.ruff.lint]
 # https://docs.astral.sh/ruff/rules/
@@ -161,8 +161,8 @@ unfixable = ["ALL"]
 preview = true
 
 [tool.ruff.lint.isort]
-known-third-party = ["app_name"]
-known-first-party = ["app_name"]
+known-third-party = ["ext_rt_key"]
+known-first-party = ["ext_rt_key"]
 
 combine-as-imports = true
 order-by-type = false

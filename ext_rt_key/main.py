@@ -4,7 +4,7 @@
 .. moduleauthor:: ilya Barinov <i-barinov@it-serv.ru>
 """
 
-from app_name.di.rest import RestDI
+from ext_rt_key.di.rest import RestDI
 
 di = RestDI()
 

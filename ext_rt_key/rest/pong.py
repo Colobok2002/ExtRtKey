@@ -4,7 +4,7 @@
 .. moduleauthor:: ilya Barinov <i-barinov@it-serv.ru>
 """
 
-from app_name.rest.common import RoutsCommon
+from ext_rt_key.rest.common import RoutsCommon
 
 
 class PingRouter(RoutsCommon):

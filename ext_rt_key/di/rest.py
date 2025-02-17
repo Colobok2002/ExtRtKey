@@ -15,10 +15,10 @@ from dependency_injector import containers, providers
 from fastapi import FastAPI, Request, Response
 from fastapi_offline import FastAPIOffline
 
-from app_name import __version__
-from app_name.di.common import CommonDI
-from app_name.rest.common import RoutsCommon
-from app_name.rest.pong import PingRouter
+from ext_rt_key import __version__
+from ext_rt_key.di.common import CommonDI
+from ext_rt_key.rest.common import RoutsCommon
+from ext_rt_key.rest.pong import PingRouter
 
 __all__ = ("RestDI",)
 
