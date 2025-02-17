@@ -54,7 +54,7 @@ class SensitiveFormatter(logging.Formatter):
 
     console = Console()
 
-    def format(self, record: logging.LogRecord) -> Any:
+    def format(self, record: logging.LogRecord) -> Any:  # noqa: D102
         log_entry = {
             "timestamp": self.formatTime(record),
             "level": record.levelname,
@@ -68,7 +68,7 @@ class SensitiveFormatter(logging.Formatter):
                 try:
                     yaml.dump(value)
                     log_entry[key] = value
-                except Exception:
+                except Exception:  # noqa: BLE001
                     log_entry[key] = str(value)
 
         yaml_text = yaml.dump(log_entry, default_flow_style=False, allow_unicode=True)

@@ -12,12 +12,15 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from ext_rt_key.rest.manager import RTManger
+
 
 class RoutsCommon(ABC):
     """Абстрактный класс для rout"""
 
     def __init__(
         self,
+        rt_manger: RTManger,
         prefix: str = "",
         tags: list[str | Enum] | None = None,
         logger: Logger | None = None,
@@ -28,6 +31,7 @@ class RoutsCommon(ABC):
         """
         self._router = APIRouter(prefix=prefix, tags=tags)
         self.logger = logger or getLogger(__name__)
+        self.rt_manger = rt_manger
 
     def add_route(self, path: str, endpoint: Callable[..., Any], method: str = "GET") -> None:
         """

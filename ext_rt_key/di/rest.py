@@ -4,21 +4,21 @@
 .. moduleauthor:: ilya Barinov <i-barinov@it-serv.ru>
 """
 
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from logging import Logger
-import time
 from typing import Any, cast
 
-import yaml
 from dependency_injector import containers, providers
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi_offline import FastAPIOffline
 
 from ext_rt_key import __version__
 from ext_rt_key.di.common import CommonDI
+from ext_rt_key.rest.auth.auth_router import AuthRouter
 from ext_rt_key.rest.common import RoutsCommon
-from ext_rt_key.rest.pong import PingRouter
+from ext_rt_key.rest.manager import RTManger
 
 __all__ = ("RestDI",)
 
@@ -30,7 +30,7 @@ class CustomFastAPIType(FastAPI):
 
 
 def init_rest_app(
-    ping_router: RoutsCommon,
+    auth_router: RoutsCommon,
     logger: Logger,
 ) -> FastAPI:
     """
@@ -52,7 +52,7 @@ def init_rest_app(
 
     # app.include_router(heath.router)
     # app.include_router(actions.router)
-    app.include_router(ping_router.router)
+    app.include_router(auth_router.router)
 
     app.logger = logger
 
@@ -70,7 +70,7 @@ def init_rest_app(
 
         return response
 
-    logger.info("Зарегистрированные routs", extra={"routs": ping_router.router.routes})
+    logger.info("Зарегистрированные routs", extra={"routs": app.router.routes})
     return app
 
 
@@ -79,14 +79,20 @@ class RestDI(containers.DeclarativeContainer):
 
     common_di = providers.Container(CommonDI)
 
-    ping_router = providers.Singleton(
-        PingRouter,
-        prefix="/ping",
-        tags=["ping"],
+    rt_manger = providers.Singleton(
+        RTManger,
+        logger=common_di.logger,
+    )
+
+    auth_router = providers.Singleton(
+        AuthRouter,
+        rt_manger=rt_manger,
+        prefix="/auth",
+        tags=["auth"],
     )
 
     app = providers.Factory(
         init_rest_app,
-        ping_router=ping_router,
+        auth_router=auth_router,
         logger=common_di.logger,
     )
