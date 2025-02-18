@@ -19,6 +19,9 @@ dependencies = [
     "types-requests (>=2.32.0.20241016,<3.0.0.0)",
     "versioner (>=0.0.7,<0.0.8)",
     "versioneer (>=0.29,<0.30)",
+    "sqlalchemy[mypy] (>=2.0.38,<3.0.0)",
+    "alembic (>=1.14.1,<2.0.0)",
+    "psycopg2-binary (>=2.9.10,<3.0.0)",
 ]
 
 

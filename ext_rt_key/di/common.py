@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 from dependency_injector import containers, providers
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
 from rich.syntax import Syntax
@@ -20,6 +21,8 @@ class Settings(BaseSettings):
     """Настройки приложения"""
 
     LOG_LEVEL: str = "INFO"
+
+    DB_URL: str = Field()
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
