@@ -15,7 +15,6 @@ from fastapi import FastAPI, Request
 from fastapi_offline import FastAPIOffline
 from pydantic_settings import BaseSettings
 from sqlalchemy import create_engine
-from sqlalchemy.orm import scoped_session, sessionmaker
 
 from ext_rt_key import __appname__, __version__
 from ext_rt_key.di.common import CommonDI
@@ -104,7 +103,6 @@ class RestDI(containers.DeclarativeContainer):
 
     db_helper: DBHelper = providers.Resource(
         get_db_helper,  # type: ignore
-        
         url=common_di.settings.provided().DB_URL,
     )
 
@@ -119,6 +117,7 @@ class RestDI(containers.DeclarativeContainer):
         rt_manger=rt_manger,
         prefix="/auth",
         tags=["auth"],
+        db_helper=db_helper,
     )
 
     app = providers.Factory(

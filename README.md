@@ -7,9 +7,7 @@ poetry env use python3
 poetry install
 ```
 
-uvicorn app_name.main:app --port 8080 --reload
-
-
+uvicorn ext_rt_key.main:app --port 8080 --reload
 
 alembic revision --autogenerate
 

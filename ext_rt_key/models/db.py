@@ -1,8 +1,16 @@
+"""
+:mod:`db` -- Модели для работы с базойА
+===================================
+.. moduleauthor:: ilya Barinov <i-barinov@it-serv.ru>
+"""
+
 import datetime
-import uuid
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, Session
+
+from ext_rt_key.utils.jwt_helper import JWTHelper
 
 
 class Base(DeclarativeBase):
@@ -12,39 +20,79 @@ class Base(DeclarativeBase):
     pass
 
 
-class PhoneNumber(Base):
+class User(Base):
+    """Таблица с пользователями"""
+
+    __tablename__ = "user"
+
+    secret_key: Mapped[str] = mapped_column(String)
+    jwt_token: Mapped[str] = mapped_column(String)
+
+    logins: Mapped[list["Login"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+    def create_token(self, session: Session) -> str:
+        """
+        Создание JWT токена
+
+        :return: токен
+        """
+        if self.secret_key is None:
+            self.secret_key = JWTHelper.generate_secure_jwt_key()
+
+        token = JWTHelper.create_token(
+            {"user_id": self.id},
+            key=self.secret_key,
+        )
+        self.jwt_token = token
+
+        session.commit()
+
+        return token
+
+    def verify_token(self) -> dict[str, Any] | None:
+        """Верификация токена"""
+        return JWTHelper.verify_token(token=self.jwt_token, key=self.secret_key)
+
+    # Отдельный метод чтоб не было путаницы
+    get_payload = verify_token
+
+
+class Login(Base):
     """Таблица с номерами телефонов"""
 
-    __tablename__ = "phone_numbers"
+    __tablename__ = "Login"
 
-    phone: Mapped[str] = mapped_column(String(15), unique=True, nullable=False)
+    login: Mapped[str] = mapped_column(String, unique=True, nullable=False)
 
-    tokens: Mapped[list["Token"]] = relationship(
-        back_populates="phone_number", cascade="all, delete-orphan"
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False
     )
 
-    def __repr__(self) -> str:
-        return f"<PhoneNumber(id={self.id}, phone={self.phone})>"
+    token: Mapped[str] = mapped_column(String, unique=True)
 
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
-class Token(Base):
-    """Таблица с токенами"""
+    address: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    __tablename__ = "tokens"
-
-    token: Mapped[str] = mapped_column(String(36), unique=True, default=lambda: str(uuid.uuid4()))
-
-    phone_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("phone_numbers.id", ondelete="CASCADE"), nullable=False
-    )
-    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
-
-    # Связь с номером телефона
-    phone_number: Mapped["PhoneNumber"] = relationship(back_populates="tokens")
+    user: Mapped["User"] = relationship("User", back_populates="logins")
 
     def is_expired(self) -> bool:
         """Проверяет, истёк ли токен"""
-        return datetime.datetime.now(datetime.UTC) > self.expires_at
+        if self.expires_at:
+            return datetime.datetime.now(datetime.UTC) > self.expires_at
+        return True
 
-    def __repr__(self) -> str:
-        return f"<Token(id={self.id}, token={self.token}, phone_id={self.phone_id}, expires_at={self.expires_at})>"
+
+# TODO: Связи
+
+
+""""
+У меня должно быть как
+
+Есть пользователь он авторизуется в моей системе через API rt
+
+У него может быть несколько логинов -> Токен : Адрес : Время жизни
+
+"""

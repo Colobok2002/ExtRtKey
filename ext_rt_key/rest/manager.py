@@ -25,7 +25,7 @@ class RTManger:
         self.helpers: dict[str, RTHelper] = dict()
         self.db_helper = db_helper
 
-    def add_helper(self, mobile_phone: str) -> None:
+    def add_helper(self, mobile_phone: str) -> RTHelper:
         """
         Добавление хелпера для номера телефона
 
@@ -34,13 +34,15 @@ class RTManger:
         """
         if mobile_phone in self.helpers:
             self.logger.info(f"RTHelper для {mobile_phone} уже есть")
-            return None
+            return self.helpers[mobile_phone]
 
         self.helpers[mobile_phone] = RTHelper(
             mobile_phone=mobile_phone,
             logger=self.logger,
             db_helper=self.db_helper,
         )
+
+        return self.helpers[mobile_phone]
 
     def get_helpers(self, mobile_phone: str) -> RTHelper | None:
         """

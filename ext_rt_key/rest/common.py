@@ -12,7 +12,9 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from ext_rt_key.models.request import BadResponse, GoodResponse
 from ext_rt_key.rest.manager import RTManger
+from ext_rt_key.utils.db_helper import DBHelper
 
 
 class RoutsCommon(ABC):
@@ -21,6 +23,7 @@ class RoutsCommon(ABC):
     def __init__(
         self,
         rt_manger: RTManger,
+        db_helper: DBHelper,
         prefix: str = "",
         tags: list[str | Enum] | None = None,
         logger: Logger | None = None,
@@ -32,6 +35,7 @@ class RoutsCommon(ABC):
         self._router = APIRouter(prefix=prefix, tags=tags)
         self.logger = logger or getLogger(__name__)
         self.rt_manger = rt_manger
+        self.db_helper = db_helper
 
     def add_route(self, path: str, endpoint: Callable[..., Any], method: str = "GET") -> None:
         """
@@ -53,3 +57,37 @@ class RoutsCommon(ABC):
         """Возвращает роутер."""
         self.setup_routes()
         return self._router
+
+    @staticmethod
+    def good_response(
+        message: str = "Успешно",
+        data: dict[str, Any] | None = None,
+    ) -> GoodResponse:
+        """
+        Успешный результат
+
+        :param message: Сообщение, defaults to "Успешно"
+        :param data: Полезная нагрузка, defaults to None
+        :return: GoodResponse
+        """
+        return GoodResponse(
+            message=message,
+            data=data,
+        )
+
+    @staticmethod
+    def bad_response(
+        message: str = "Что то пошло не так",
+        data: dict[str, Any] | None = None,
+    ) -> BadResponse:
+        """
+        Результат с ошибкой
+
+        :param message: Сообщение, defaults to "Что то пошло не так"
+        :param data: Полезная нагрузка, defaults to None
+        :return: BadResponse
+        """
+        return BadResponse(
+            message=message,
+            data=data,
+        )
