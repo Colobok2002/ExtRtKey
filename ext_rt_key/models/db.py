@@ -85,14 +85,21 @@ class Login(Base):
         return True
 
 
-# TODO: Связи
+class Cameras(Base):
+    # medium
+    __tablename__ = "cameras"
+
+    archive_length: Mapped[int] = mapped_column(Integer, doc="Количество архивных дней")
+    rt_id: Mapped[str] = mapped_column(String, doc="Id в системе rt")
+    screenshot_url_template: Mapped[str] = mapped_column(
+        String, doc="Шаблон Url для получения снимка"
+    )
+    screenshot_token: Mapped[str] = mapped_column(String, doc="Токен для получения скриншота")
+    streamer_token: Mapped[str] = mapped_column(String, doc="Токен для получения видео трансляции")
+
+    login: Mapped[str] = mapped_column(
+        String, ForeignKey("Login.login", ondelete="CASCADE"), nullable=False
+    )
 
 
-""""
-У меня должно быть как
-
-Есть пользователь он авторизуется в моей системе через API rt
-
-У него может быть несколько логинов -> Токен : Адрес : Время жизни
-
-"""
+# "https://media-vdk4.camera.rt.ru/image/{size}/4e55bb9a-58e9-49c9-a790-f52b8eea8687/{timestamp}.jpg?token={cdn_token}

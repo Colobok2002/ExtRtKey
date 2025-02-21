@@ -22,35 +22,35 @@ class AuthRouter(RoutsCommon):
 
     async def request_code(
         self,
-        mobile_phone: str = "79534499755",
+        login: str = "79534499755",
         captcha_id: str | None = None,
         captcha_code: str | None = None,
     ) -> GoodResponse | BadResponse:
         """Запрос кода авторизации"""
-        rt_helper = self.rt_manger.add_helper(mobile_phone)
-        return rt_helper.request_code(
+        rt_helper = self.rt_manger.add_helper(login)
+        return await rt_helper.request_code(
             captcha_id=captcha_id,
             captcha_code=captcha_code,
         )
 
     async def request_token(
         self,
-        mobile_phone: str,
+        login: str,
         code: str,
     ) -> GoodResponse | BadResponse:
         """Получение токена авторизации"""
-        rt_helper = self.rt_manger.get_helpers(mobile_phone)
+        rt_helper = self.rt_manger.get_helpers(login)
 
         if rt_helper:
             self.logger.info("Токен успешно получен")
-            return rt_helper.request_token(code)
+            return await rt_helper.request_token(code)
 
         self.logger.info("Сессия не найдена")
         return self.bad_response("Сессия не найдена")
 
     async def open_dor(
         self,
-        mobile_phone: str,
+        login: str,
         # jwt: str,
     ) -> GoodResponse | BadResponse:
         """
@@ -62,17 +62,16 @@ class AuthRouter(RoutsCommon):
         # Проверяем что владелец jwt имеет доступ к этому методу пока проверку пропустим
 
         with self.db_helper.sessionmanager() as session:
-            login = session.query(Login).filter(Login.login == mobile_phone).first()
-            print(login)
-            if not login:
+            login_model = session.query(Login).filter(Login.login == login).first()
+            if not login_model:
                 return self.bad_response("Ваше сессия завершена")
-            rt_key = login.token
+            rt_key = login_model.token
 
-        rt_helper = self.rt_manger.add_helper(mobile_phone)
+        rt_helper = self.rt_manger.add_helper(login)
 
         if rt_helper:
             self.logger.info("Устройство открыто")
-            return rt_helper.open_device(rt_key)
+            return await rt_helper.open_device(rt_key)
 
         self.logger.info("Сессия не найдена")
         return self.bad_response()

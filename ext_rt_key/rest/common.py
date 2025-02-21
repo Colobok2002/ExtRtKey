@@ -50,7 +50,7 @@ class RoutsCommon(ABC):
     @abstractmethod
     def setup_routes(self) -> None:
         """Абстрактный метод для настройки маршрутов. Должен быть реализован в подклассах."""
-        pass
+        raise NotImplementedError()
 
     @property
     def router(self) -> APIRouter:
