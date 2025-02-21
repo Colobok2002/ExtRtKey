@@ -16,7 +16,6 @@ from ext_rt_key.models.db import Cameras, Login, User
 from ext_rt_key.models.request import BadResponse, GoodResponse
 from ext_rt_key.utils.db_helper import DBHelper
 
-
 # region AUTH
 URL_GET_CODE = "https://keyapis.key.rt.ru/identity/api/v1/authorization/send_code"
 URL_LOGIN = "https://keyapis.key.rt.ru/identity/api/v1/authorization/login"
@@ -28,63 +27,6 @@ URL_GET_ALL_CAMERAS = "https://vc.key.rt.ru/api/v1/cameras?limit=100&offset=0"
 URL_GET_INTERCOM = "https://household.key.rt.ru/api/v2/app/devices/intercom"
 # URL_OPEN_DEVICE = "https://household.key.rt.ru/api/v2/app/devices/{}/open"
 # endregion
-
-
-# URL для подключения к удалённому WebSocket
-WS_URL = "wss://live-vdk4.camera.rt.ru/stream/da86406e-e2e7-47e7-b5c3-49335d507844/1740151220.mp4?mp4-fragment-length=0.5&mp4-use-speed=0&mp4-afiller=1&token=eyJraWQiOiJkZWZhdWx0X3Byb2R1Y3Rpb24iLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ2Y2Zyb250X3Byb2R1Y3Rpb24iLCJzdWIiOjIwNTQ5MjAsImlwIjoiMTAuNzguMzMuMiIsImNoYW5uZWwiOiJkYTg2NDA2ZS1lMmU3LTQ3ZTctYjVjMy00OTMzNWQ1MDc4NDQiLCJleHAiOjE3NDAxODk2MDB9.FUjRbUIAnw4P28vhh17YyKE8MAgLjepB8GNKn5gX1eM"
-
-# Заголовки для соединения
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0",
-    "Accept": "*/*",
-    "Accept-Language": "ru",
-    "Sec-WebSocket-Version": "13",
-    "Sec-WebSocket-Extensions": "permessage-deflate",
-    "Sec-WebSocket-Key": "wNdEBmBZSUU+tiW7M8452g==",
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "websocket",
-    "Sec-Fetch-Site": "same-site",
-    "Pragma": "no-cache",
-    "Cache-Control": "no-cache",
-}
-
-# HTML страница с видео-плеером
-html = """
-<!DOCTYPE html>
-<html>
-    <head>
-        <title>WebSocket Video Stream</title>
-    </head>
-    <body>
-        <h1>Видео трансляция через WebSocket</h1>
-        <video id="video" width="640" height="360" controls autoplay></video>
-        <script>
-            const videoElement = document.getElementById("video");
-            const ws = new WebSocket("ws://localhost:8000/ws");
-
-            ws.binaryType = "arraybuffer";
-
-            ws.onmessage = function(event) {
-                const blob = new Blob([event.data], { type: "video/mp4" });
-                const url = URL.createObjectURL(blob);
-                videoElement.src = url;
-            };
-
-            ws.onopen = function() {
-                console.log("WebSocket соединение установлено.");
-            };
-
-            ws.onclose = function() {
-                console.log("WebSocket соединение закрыто.");
-            };
-
-            ws.onerror = function(error) {
-                console.error("WebSocket ошибка:", error);
-            };
-        </script>
-    </body>
-</html>
-"""
 
 
 __all__ = ("RTHelper",)
@@ -148,14 +90,29 @@ class RTHelper:
 
     def __init__(  # noqa: D107
         self,
-        login: str,
         db_helper: DBHelper,
+        login: str = "79534499755",
         logger: Logger | None = None,
     ) -> None:
         self.login = login
         self.logger = logger or getLogger(__name__)
         self.auth_manager = AuthManager(db_helper)
         self.db_helper = db_helper
+
+        self.init_auth_manager(self.login, self.auth_manager, self.db_helper)
+
+    @staticmethod
+    def init_auth_manager(
+        login: str,
+        auth_manager: AuthManager,
+        db_helper: DBHelper,
+    ) -> None:
+        """Инициализация менеджера авторизации при инициализации класса"""
+        with db_helper.sessionmanager() as session:
+            login_model = session.query(Login).filter(Login.login == login).first()
+            if not login_model:
+                return None
+            auth_manager.authorization_token = login_model.token
 
     async def request_token(self, code: str) -> GoodResponse | BadResponse:
         """Получение токена авторизации"""
@@ -205,7 +162,7 @@ class RTHelper:
                 )
 
         # TODO: Обработка неправильный сообщений по типу не верный код
-        print(response.json())
+        # print(response.json())
         # input
         # {"error": {"otpCode": {"invalidCode": {}}}}
 
@@ -274,10 +231,11 @@ class RTHelper:
                 return BadResponse(message="Слишком много запросов, немного подождите")
         return BadResponse()
 
-    async def open_device(self, rt_token: str) -> GoodResponse | BadResponse:
+    async def open_device(
+        self,
+    ) -> GoodResponse | BadResponse:
         """Открытие устройства"""
-
-        self._get_intercom(rt_token)
+        return await self.get_cameras()
         # self.auth_manager.authorization_token = rt_token
         # response = requests.post(URL_OPEN, headers=self.auth_manager.headers_auth)
 
@@ -297,34 +255,42 @@ class RTHelper:
         #     return BadResponse(message="Токен устарел, мы работаем над этой проблемой")
         return BadResponse()
 
-    async def get_cameras(self) -> BadResponse:
-        # with self.db_helper.sessionmanager() as session:
-        #     user_model = session.query(Login).filter(Login.login == login).first()
-        #     if not user_model:
-        #         await BadResponse(message="Токен ")
-        #         return
-        #     rt_key = user_model.token
-
+    async def get_cameras(self) -> GoodResponse | BadResponse:
+        """Выгрузка в базу всех камер"""
         response = requests.get(
             URL_GET_ALL_CAMERAS,
-            headers=self.auth_manager.headers_process_auth,
+            headers=self.auth_manager.headers_auth,
         )
 
-        if response.status_code != HTTPStatus.OK:
+        if response.status_code == HTTPStatus.OK:
             response_data = response.json().get("data").get("items")
 
-            for camera in response_data:
-                print(camera)
-                id_ = camera.get("id", {})
-                streamer_token = camera.get("streamer_token", {})
+            with self.db_helper.sessionmanager() as session:
+                for camera in response_data:
+                    id_ = camera.get("id", {})
+                    camera_model = session.query(Cameras).filter(Cameras.rt_id == id_).first()
 
-                new_camera = Cameras(
-                    id=id_,
-                    streamer_token=streamer_token,
-                    login=self.login,
-                )
+                    if camera_model:
+                        camera_model.archive_length = camera.get("archive_length")
+                        camera_model.screenshot_url_template = camera.get("screenshot_url_template")
+                        camera_model.screenshot_token = camera.get("screenshot_token")
+                        camera_model.streamer_token = camera.get("streamer_token", {})
 
-        return BadResponse()
+                    else:
+                        new_camera = Cameras(
+                            archive_length=camera.get("archive_length"),
+                            rt_id=id_,
+                            screenshot_url_template=camera.get("screenshot_url_template"),
+                            screenshot_token=camera.get("screenshot_token"),
+                            streamer_token=camera.get("streamer_token", {}),
+                            login=self.login,
+                        )
+                        session.add(new_camera)
+                session.commit()
+
+            return GoodResponse(message="Данные камер успешно обновлены")
+
+        return BadResponse(message="")
 
 
 #     def _get_intercom(self, rt_token: str) -> None:
@@ -334,7 +300,7 @@ class RTHelper:
 #             intercoms = response.json().get("data", {}).get("devices", [])
 #             for intercom in intercoms:
 #                 print(intercom)
-#             {  # noqa: B018
+#             {
 #                 "data": {
 #                     "devices": [
 #                         {
@@ -663,9 +629,6 @@ class RTHelper:
 #                 }
 #             }
 
-#     def get_stream_camera(self):
-#         c_id = "da86406e-e2e7-47e7-b5c3-49335d507844"
-
 
 # # TODO: Следующий шаг подтягивать устройства вот запрос
 # # await fetch(
@@ -673,7 +636,7 @@ class RTHelper:
 # #     {
 # #         "credentials": "include",
 # #         "headers": {
-# #             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0",
+# #             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0",  # noqa
 # #             "Accept": "application/json, text/plain, */*",
 # #             "Accept-Language": "ru",
 # #             "X-Request-Id": "0195202d-c630-7053-91e7-113a2919379b",

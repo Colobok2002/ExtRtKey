@@ -1,5 +1,5 @@
 """
-:mod:`db` -- Модели для работы с базойА
+:mod:`db` -- Модели для работы с Базой
 ===================================
 .. moduleauthor:: ilya Barinov <i-barinov@it-serv.ru>
 """
@@ -100,6 +100,3 @@ class Cameras(Base):
     login: Mapped[str] = mapped_column(
         String, ForeignKey("Login.login", ondelete="CASCADE"), nullable=False
     )
-
-
-# "https://media-vdk4.camera.rt.ru/image/{size}/4e55bb9a-58e9-49c9-a790-f52b8eea8687/{timestamp}.jpg?token={cdn_token}

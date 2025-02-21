@@ -1,3 +1,9 @@
+"""
+:mod:`request` -- Модели Ответов
+===================================
+.. moduleauthor:: ilya Barinov <i-barinov@it-serv.ru>
+"""
+
 from typing import Any
 
 from pydantic import BaseModel, Field

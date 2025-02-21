@@ -61,17 +61,11 @@ class AuthRouter(RoutsCommon):
         # В будующем в базе будут хранится устройство и login
         # Проверяем что владелец jwt имеет доступ к этому методу пока проверку пропустим
 
-        with self.db_helper.sessionmanager() as session:
-            login_model = session.query(Login).filter(Login.login == login).first()
-            if not login_model:
-                return self.bad_response("Ваше сессия завершена")
-            rt_key = login_model.token
-
         rt_helper = self.rt_manger.add_helper(login)
 
         if rt_helper:
             self.logger.info("Устройство открыто")
-            return await rt_helper.open_device(rt_key)
+            return await rt_helper.open_device()
 
         self.logger.info("Сессия не найдена")
         return self.bad_response()
