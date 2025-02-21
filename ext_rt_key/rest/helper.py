@@ -11,8 +11,9 @@ from logging import getLogger, Logger
 from typing import Any
 
 import requests
+from sqlalchemy import and_
 
-from ext_rt_key.models.db import Cameras, Login, User
+from ext_rt_key.models.db import Cameras, Devices, DeviceType, Login, User
 from ext_rt_key.models.request import BadResponse, GoodResponse
 from ext_rt_key.utils.db_helper import DBHelper
 
@@ -25,7 +26,8 @@ URL_OPEN = "https://household.key.rt.ru/api/v2/app/devices/30359/open"
 # region DEVISES
 URL_GET_ALL_CAMERAS = "https://vc.key.rt.ru/api/v1/cameras?limit=100&offset=0"
 URL_GET_INTERCOM = "https://household.key.rt.ru/api/v2/app/devices/intercom"
-# URL_OPEN_DEVICE = "https://household.key.rt.ru/api/v2/app/devices/{}/open"
+URL_GET_BARRIER = "https://household.key.rt.ru/api/v2/app/devices/barrier"
+URL_OPEN_DEVICE = "https://household.key.rt.ru/api/v2/app/devices/{}/open"
 # endregion
 
 
@@ -88,12 +90,22 @@ class AuthManager:
 class RTHelper:
     """Интрефейс для взаимодействия с API Rt"""
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         db_helper: DBHelper,
         login: str = "79534499755",
         logger: Logger | None = None,
     ) -> None:
+        """
+        Init метод
+
+        :param db_helper: _description_
+        :type db_helper: _type_
+        :param login: _description_, defaults to "79534499755"
+        :type login: _type_, optional
+        :param logger: _description_, defaults to None
+        :type logger: _type_, optional
+        """
         self.login = login
         self.logger = logger or getLogger(__name__)
         self.auth_manager = AuthManager(db_helper)
@@ -203,7 +215,7 @@ class RTHelper:
             # TODO : Доделать проверку на валидность
             self.auth_manager.code_id = init_auth_session.json().get("data", {}).get("codeId")
             if self.auth_manager.code_id:
-                # -> "{data: {codeId: 8tDNvd7m03sKgHvY6XMGJ7HRPn5cRRFMYmmuSTmeH2NTk8SeVSfLhpcWJ2jLUVrHyEmQQN2sVfwOqsfstGy828wO2B4nJbMMd4nh,timeout: 180}}"
+                # -> "{data: {codeId: 8tDNvd7m03sKgHvY6XMGJ7HRPn5cRRFMYmmuSTmeH2NTk8SeVSfLhpcWJ2jLUVrHyEmQQN2sVfwOqsfstGy828wO2B4nJbMMd4nh,timeout: 180}}"  # noqa
                 return GoodResponse(message="На ваше устройство отправлен код")
 
         # INFO: работа с капчей
@@ -231,29 +243,19 @@ class RTHelper:
                 return BadResponse(message="Слишком много запросов, немного подождите")
         return BadResponse()
 
-    async def open_device(
-        self,
-    ) -> GoodResponse | BadResponse:
-        """Открытие устройства"""
-        return await self.get_cameras()
-        # self.auth_manager.authorization_token = rt_token
-        # response = requests.post(URL_OPEN, headers=self.auth_manager.headers_auth)
+    async def load_devices(self) -> GoodResponse | BadResponse:
+        """Загрузка всех устройств"""
+        status_dict: dict[str, bool] = {}
+        status_dict["CAMERAS"] = isinstance(await self.get_cameras(), GoodResponse)
+        status_dict["INTERCOM"] = isinstance(
+            await self._get_devices(URL_GET_INTERCOM), GoodResponse
+        )
+        status_dict["BARRIER"] = isinstance(await self._get_devices(URL_GET_BARRIER), GoodResponse)
 
-        # if response.status_code == HTTPStatus.OK:
-        #     return GoodResponse(message="Успешно")
-
-        # if response.status_code == HTTPStatus.UNAUTHORIZED:
-        #     # -> {
-        #     #     "error": {
-        #     #         "code": "token_invalid",
-        #     #         "description": "Некорректный токен",
-        #     #         "title": "Некорректный токен",
-        #     #     }
-        #     # }
-        #     # response_data = response.json()
-        #     # Пока так, придумать что делать в этом случае
-        #     return BadResponse(message="Токен устарел, мы работаем над этой проблемой")
-        return BadResponse()
+        return GoodResponse(
+            message="Данные успешно обновлены",
+            data=status_dict,
+        )
 
     async def get_cameras(self) -> GoodResponse | BadResponse:
         """Выгрузка в базу всех камер"""
@@ -292,369 +294,68 @@ class RTHelper:
 
         return BadResponse(message="")
 
+    async def _get_devices(
+        self,
+        target_url: str,
+    ) -> GoodResponse | BadResponse:
+        """Выгрузка домофонов"""
+        # Актуализируем камеры
+        await self.get_cameras()
+        response = requests.get(target_url, headers=self.auth_manager.headers_auth)
+        if response.status_code == HTTPStatus.OK:
+            intercoms = response.json().get("data", {}).get("devices", [])
+            with self.db_helper.sessionmanager() as session:
+                for intercom in intercoms:
+                    intercom_model = (
+                        session.query(Devices)
+                        .filter(
+                            and_(
+                                Devices.rt_id == intercom.get("id"),
+                                Devices.login_id == self.login,
+                            )
+                        )
+                        .first()
+                    )
+                    if intercom_model:
+                        intercom_model.description = intercom.get("description")
+                        # Добавляем в избранное ток если новое пришло True а тут False
+                        if not intercom_model.is_favorite and intercom.get("is_favorite"):
+                            intercom_model.is_favorite = intercom.get("is_favorite")
+                    else:
+                        intercom_model = Devices(
+                            rt_id=intercom.get("id"),
+                            device_type=DeviceType(intercom.get("device_type")),
+                            login_id=self.login,
+                            camera_id=intercom.get("camera_id"),
+                            description=intercom.get("description"),
+                            is_favorite=intercom.get("is_favorite"),
+                            name_by_user=intercom.get("name_by_user"),
+                        )
 
-#     def _get_intercom(self, rt_token: str) -> None:
-#         self.auth_manager.authorization_token = rt_token
-#         response = requests.get(URL_GET_INTERCOM, headers=self.auth_manager.headers_auth)
-#         if response.status_code == HTTPStatus.OK:
-#             intercoms = response.json().get("data", {}).get("devices", [])
-#             for intercom in intercoms:
-#                 print(intercom)
-#             {
-#                 "data": {
-#                     "devices": [
-#                         {
-#                             "id": "30369",
-#                             "device_type": "intercom",
-#                             "serial_number": "264616",
-#                             "device_group": ["Калитка"],
-#                             "utc_offset_minutes": 180,
-#                             "camera_id": "da86406e-e2e7-47e7-b5c3-49335d507844",
-#                             "description": "калитка под3",
-#                             "is_favorite": False,
-#                             "is_active": True,
-#                             "name_by_company": "калитка под3",
-#                             "name_by_user": None,
-#                             "accept_concierge_call": False,
-#                             "capabilities": [
-#                                 {"name": "temporary_key", "setup": True},
-#                                 {"name": "constant_key", "setup": True},
-#                                 {"name": "sip_calls", "setup": True},
-#                                 {"name": "open_door", "setup": True},
-#                                 {"name": "dtmf_code", "setup": True},
-#                                 {"name": "sip_video", "setup": True},
-#                                 {"name": "ntp", "setup": True},
-#                                 {"name": "syslog", "setup": True},
-#                                 {"name": "emergency_door", "setup": True},
-#                                 {"name": "gate", "setup": True},
-#                                 {"name": "flat_autocollect", "setup": True},
-#                                 {"name": "face_recognition", "setup": False},
-#                                 {"name": "autocollect", "setup": True},
-#                                 {"name": "change_password", "setup": True},
-#                                 {"name": "cms_phones", "setup": False},
-#                                 {"name": "reinstall", "setup": True},
-#                                 {"name": "emergency_call", "setup": True},
-#                             ],
-#                             "inter_codes": [
-#                                 {
-#                                     "id": 11769328,
-#                                     "code": "045F89A2FF7580",
-#                                     "start_date": "2024-11-28T10:57:45.976829Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                 },
-#                                 {
-#                                     "id": 12324802,
-#                                     "code": "047822CAFF7580",
-#                                     "start_date": "2024-12-25T10:32:39.125167Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                                 {
-#                                     "id": 12324803,
-#                                     "code": "042D6ED2FF7580",
-#                                     "start_date": "2024-12-25T10:32:39.228528Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                             ],
-#                         },
-#                         {
-#                             "id": "30368",
-#                             "device_type": "intercom",
-#                             "serial_number": "FC7D004845",
-#                             "device_group": ["Калитка"],
-#                             "utc_offset_minutes": 180,
-#                             "description": "Калитка 6",
-#                             "is_favorite": False,
-#                             "is_active": True,
-#                             "name_by_company": "Калитка 6",
-#                             "name_by_user": None,
-#                             "accept_concierge_call": False,
-#                             "capabilities": [
-#                                 {"name": "syslog", "setup": True},
-#                                 {"name": "ntp", "setup": True},
-#                                 {"name": "constant_key", "setup": True},
-#                                 {"name": "open_door", "setup": True},
-#                                 {"name": "sl3", "setup": False},
-#                             ],
-#                             "inter_codes": [
-#                                 {
-#                                     "id": 11769328,
-#                                     "code": "045F89A2FF7580",
-#                                     "start_date": "2024-11-28T10:57:45.976829Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                 },
-#                                 {
-#                                     "id": 12324802,
-#                                     "code": "047822CAFF7580",
-#                                     "start_date": "2024-12-25T10:32:39.125167Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                                 {
-#                                     "id": 12324803,
-#                                     "code": "042D6ED2FF7580",
-#                                     "start_date": "2024-12-25T10:32:39.228528Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                             ],
-#                         },
-#                         {
-#                             "id": "30367",
-#                             "device_type": "intercom",
-#                             "serial_number": "FC7D004614",
-#                             "device_group": ["Калитка"],
-#                             "utc_offset_minutes": 180,
-#                             "description": "Подвал 6",
-#                             "is_favorite": False,
-#                             "is_active": True,
-#                             "name_by_company": "Подвал 6",
-#                             "name_by_user": None,
-#                             "accept_concierge_call": False,
-#                             "capabilities": [
-#                                 {"name": "syslog", "setup": True},
-#                                 {"name": "ntp", "setup": True},
-#                                 {"name": "constant_key", "setup": True},
-#                                 {"name": "open_door", "setup": True},
-#                                 {"name": "sl3", "setup": False},
-#                             ],
-#                             "inter_codes": [
-#                                 {
-#                                     "id": 11769328,
-#                                     "code": "045F89A2FF7580",
-#                                     "start_date": "2024-11-28T10:57:45.976829Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                 },
-#                                 {
-#                                     "id": 12324802,
-#                                     "code": "047822CAFF7580",
-#                                     "start_date": "2024-12-25T10:32:39.125167Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                                 {
-#                                     "id": 12324803,
-#                                     "code": "042D6ED2FF7580",
-#                                     "start_date": "2024-12-25T10:32:39.228528Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                             ],
-#                         },
-#                         {
-#                             "id": "30353",
-#                             "device_type": "intercom",
-#                             "serial_number": "217841",
-#                             "device_group": ["Калитка"],
-#                             "utc_offset_minutes": 180,
-#                             "camera_id": "cb844197-a935-4b78-90a5-16468d043be1",
-#                             "description": "подьезд№6",
-#                             "is_favorite": False,
-#                             "is_active": True,
-#                             "name_by_company": "подьезд№6",
-#                             "name_by_user": None,
-#                             "accept_concierge_call": False,
-#                             "capabilities": [
-#                                 {"name": "temporary_key", "setup": True},
-#                                 {"name": "constant_key", "setup": True},
-#                                 {"name": "sip_calls", "setup": True},
-#                                 {"name": "open_door", "setup": True},
-#                                 {"name": "dtmf_code", "setup": True},
-#                                 {"name": "sip_video", "setup": True},
-#                                 {"name": "ntp", "setup": True},
-#                                 {"name": "syslog", "setup": True},
-#                                 {"name": "emergency_door", "setup": True},
-#                                 {"name": "gate", "setup": True},
-#                                 {"name": "flat_autocollect", "setup": True},
-#                                 {"name": "face_recognition", "setup": False},
-#                                 {"name": "autocollect", "setup": True},
-#                                 {"name": "change_password", "setup": True},
-#                                 {"name": "cms_phones", "setup": False},
-#                                 {"name": "reinstall", "setup": True},
-#                                 {"name": "emergency_call", "setup": True},
-#                             ],
-#                             "inter_codes": [
-#                                 {
-#                                     "id": 11769328,
-#                                     "code": "045F89A2FF7580",
-#                                     "start_date": "2024-11-28T10:57:45.976829Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                 },
-#                                 {
-#                                     "id": 12324802,
-#                                     "code": "047822CAFF7580",
-#                                     "start_date": "2024-12-25T10:32:39.125167Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                                 {
-#                                     "id": 12324803,
-#                                     "code": "042D6ED2FF7580",
-#                                     "start_date": "2024-12-25T10:32:39.228528Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                             ],
-#                         },
-#                         {
-#                             "id": "30342",
-#                             "device_type": "intercom",
-#                             "serial_number": "263112",
-#                             "device_group": ["Калитка"],
-#                             "utc_offset_minutes": 180,
-#                             "camera_id": "b1b4e9c6-3182-4a06-98c3-8da3c474148f",
-#                             "description": "калитка 5под",
-#                             "is_favorite": False,
-#                             "is_active": True,
-#                             "name_by_company": "калитка 5под",
-#                             "name_by_user": None,
-#                             "accept_concierge_call": False,
-#                             "capabilities": [
-#                                 {"name": "temporary_key", "setup": True},
-#                                 {"name": "constant_key", "setup": True},
-#                                 {"name": "sip_calls", "setup": True},
-#                                 {"name": "open_door", "setup": True},
-#                                 {"name": "dtmf_code", "setup": True},
-#                                 {"name": "sip_video", "setup": True},
-#                                 {"name": "ntp", "setup": True},
-#                                 {"name": "syslog", "setup": True},
-#                                 {"name": "emergency_door", "setup": True},
-#                                 {"name": "gate", "setup": True},
-#                                 {"name": "flat_autocollect", "setup": True},
-#                                 {"name": "face_recognition", "setup": False},
-#                                 {"name": "autocollect", "setup": True},
-#                                 {"name": "change_password", "setup": True},
-#                                 {"name": "cms_phones", "setup": False},
-#                                 {"name": "reinstall", "setup": True},
-#                                 {"name": "emergency_call", "setup": True},
-#                             ],
-#                             "inter_codes": [
-#                                 {
-#                                     "id": 11769328,
-#                                     "code": "045F89A2FF7580",
-#                                     "start_date": "2024-11-28T10:57:45.976829Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                 },
-#                                 {
-#                                     "id": 12324802,
-#                                     "code": "047822CAFF7580",
-#                                     "start_date": "2024-12-25T10:32:39.125167Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                                 {
-#                                     "id": 12324803,
-#                                     "code": "042D6ED2FF7580",
-#                                     "start_date": "2024-12-25T10:32:39.228528Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                             ],
-#                         },
-#                         {
-#                             "id": "30341",
-#                             "device_type": "intercom",
-#                             "serial_number": "218278",
-#                             "device_group": ["Калитка"],
-#                             "utc_offset_minutes": 180,
-#                             "camera_id": "b1b4e9c6-3182-4a06-98c3-8da3c474148f",
-#                             "description": "калитка 1под",
-#                             "is_favorite": False,
-#                             "is_active": True,
-#                             "name_by_company": "калитка 1под",
-#                             "name_by_user": None,
-#                             "accept_concierge_call": False,
-#                             "capabilities": [
-#                                 {"name": "temporary_key", "setup": True},
-#                                 {"name": "constant_key", "setup": True},
-#                                 {"name": "sip_calls", "setup": True},
-#                                 {"name": "open_door", "setup": True},
-#                                 {"name": "dtmf_code", "setup": True},
-#                                 {"name": "sip_video", "setup": True},
-#                                 {"name": "ntp", "setup": True},
-#                                 {"name": "syslog", "setup": True},
-#                                 {"name": "emergency_door", "setup": True},
-#                                 {"name": "gate", "setup": True},
-#                                 {"name": "flat_autocollect", "setup": True},
-#                                 {"name": "face_recognition", "setup": False},
-#                                 {"name": "autocollect", "setup": True},
-#                                 {"name": "change_password", "setup": True},
-#                                 {"name": "cms_phones", "setup": False},
-#                                 {"name": "reinstall", "setup": True},
-#                                 {"name": "emergency_call", "setup": True},
-#                             ],
-#                             "inter_codes": [
-#                                 {
-#                                     "id": 11769328,
-#                                     "code": "045F89A2FF7580",
-#                                     "start_date": "2024-11-28T10:57:45.976829Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                 },
-#                                 {
-#                                     "id": 12324802,
-#                                     "code": "047822CAFF7580",
-#                                     "start_date": "2024-12-25T10:32:39.125167Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                                 {
-#                                     "id": 12324803,
-#                                     "code": "042D6ED2FF7580",
-#                                     "start_date": "2024-12-25T10:32:39.228528Z",
-#                                     "end_date": None,
-#                                     "inter_code_type": "constant",
-#                                     "description": "",
-#                                 },
-#                             ],
-#                         },
-#                     ]
-#                 }
-#             }
+                        session.add(intercom_model)
+                session.commit()
+            return GoodResponse(message="Данные домофонов успешно обновлены")
 
+        return GoodResponse()
 
-# # TODO: Следующий шаг подтягивать устройства вот запрос
-# # await fetch(
-# #     "https://household.key.rt.ru/api/v2/app/devices/intercom",
-# #     {
-# #         "credentials": "include",
-# #         "headers": {
-# #             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0",  # noqa
-# #             "Accept": "application/json, text/plain, */*",
-# #             "Accept-Language": "ru",
-# #             "X-Request-Id": "0195202d-c630-7053-91e7-113a2919379b",
-# #             "Sec-Fetch-Dest": "empty",
-# #             "Sec-Fetch-Mode": "cors",
-# #             "Sec-Fetch-Site": "same-site",
-# #         },
-# #         "referrer": "https://key.rt.ru/",
-# #         "method": "GET",
-# #         "mode": "cors",
-# #     },
-# # )
-# # rtHelper = RTHelper(mobile_phone="79534499755")
+    async def open_device(
+        self,
+    ) -> GoodResponse | BadResponse:
+        """Открытие устройства"""
+        response = requests.post(URL_OPEN, headers=self.auth_manager.headers_auth)
 
-# # rtHelper.request_code()
+        if response.status_code == HTTPStatus.OK:
+            return GoodResponse(message="Успешно")
 
-# # code = input("Token")
-
-# # rtHelper.requset_token(code)
-
-# # rtHelper.open_device()
+        if response.status_code == HTTPStatus.UNAUTHORIZED:
+            # -> {
+            #     "error": {
+            #         "code": "token_invalid",
+            #         "description": "Некорректный токен",
+            #         "title": "Некорректный токен",
+            #     }
+            # }
+            # response_data = response.json()
+            # Пока так, придумать что делать в этом случае
+            return BadResponse(message="Токен устарел, мы работаем над этой проблемой")
+        return BadResponse()

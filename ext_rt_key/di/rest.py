@@ -20,6 +20,7 @@ from ext_rt_key import __appname__, __version__
 from ext_rt_key.di.common import CommonDI
 from ext_rt_key.rest.auth.auth_router import AuthRouter
 from ext_rt_key.rest.common import RoutsCommon
+from ext_rt_key.rest.devices.devices_router import DevicesRouter
 from ext_rt_key.rest.manager import RTManger
 from ext_rt_key.rest.video.video_router import VideoRouter
 from ext_rt_key.utils.db_helper import DBHelper
@@ -34,7 +35,7 @@ class CustomFastAPIType(FastAPI):
 
 
 def init_rest_app(
-    routers: list[type(RoutsCommon)],
+    routers: list[type[RoutsCommon]],
     logger: Logger,
     settings: BaseSettings,
 ) -> FastAPI:
@@ -55,10 +56,8 @@ def init_rest_app(
         CustomFastAPIType, FastAPIOffline(version=__version__, lifespan=lifespan)
     )
 
-    # app.include_router(heath.router)
-    # app.include_router(actions.router)
     for router in routers:
-        app.include_router(router().router)
+        app.include_router(router().router)  # type: ignore
 
     app.logger = logger
 
@@ -130,11 +129,20 @@ class RestDI(containers.DeclarativeContainer):
         db_helper=db_helper,
     )
 
+    devices_router = providers.Singleton(
+        DevicesRouter,
+        rt_manger=rt_manger,
+        prefix="/devices",
+        tags=["devices"],
+        db_helper=db_helper,
+    )
+
     app = providers.Factory(
         init_rest_app,
         routers=[
             auth_router,
             video_router,
+            devices_router,
         ],
         logger=common_di.logger,
         settings=common_di.settings,

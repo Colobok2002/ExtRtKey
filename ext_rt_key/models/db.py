@@ -5,9 +5,10 @@
 """
 
 import datetime
+from enum import Enum
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, Session
 
 from ext_rt_key.utils.jwt_helper import JWTHelper
@@ -16,8 +17,11 @@ from ext_rt_key.utils.jwt_helper import JWTHelper
 class Base(DeclarativeBase):
     """Базовый класс для моделей"""
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    pass
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
 
 
 class User(Base):
@@ -29,7 +33,8 @@ class User(Base):
     jwt_token: Mapped[str] = mapped_column(String)
 
     logins: Mapped[list["Login"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def create_token(self, session: Session) -> str:
@@ -62,21 +67,46 @@ class User(Base):
 class Login(Base):
     """Таблица с номерами телефонов"""
 
-    __tablename__ = "Login"
+    __tablename__ = "login"
 
-    login: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    login: Mapped[str] = mapped_column(
+        String,
+        unique=True,
+        nullable=False,
     )
 
-    token: Mapped[str] = mapped_column(String, unique=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    )
 
-    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    token: Mapped[str] = mapped_column(
+        String,
+        unique=True,
+        nullable=False,
+    )
 
-    address: Mapped[str | None] = mapped_column(String, nullable=True)
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
 
-    user: Mapped["User"] = relationship("User", back_populates="logins")
+    address: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="logins",
+        uselist=False,
+    )
+
+    devices: Mapped["Devices"] = relationship(
+        "Devices",
+        back_populates="login",
+    )
 
     def is_expired(self) -> bool:
         """Проверяет, истёк ли токен"""
@@ -89,14 +119,96 @@ class Cameras(Base):
     # medium
     __tablename__ = "cameras"
 
-    archive_length: Mapped[int] = mapped_column(Integer, doc="Количество архивных дней")
-    rt_id: Mapped[str] = mapped_column(String, doc="Id в системе rt")
+    archive_length: Mapped[int] = mapped_column(
+        Integer,
+        doc="Количество архивных дней",
+        nullable=True,
+    )
+    rt_id: Mapped[str] = mapped_column(
+        String,
+        doc="Id в системе rt",
+        unique=True,
+        nullable=False,
+    )
     screenshot_url_template: Mapped[str] = mapped_column(
         String, doc="Шаблон Url для получения снимка"
     )
-    screenshot_token: Mapped[str] = mapped_column(String, doc="Токен для получения скриншота")
-    streamer_token: Mapped[str] = mapped_column(String, doc="Токен для получения видео трансляции")
+    screenshot_token: Mapped[str] = mapped_column(
+        String,
+        doc="Токен для получения скриншота",
+    )
+    streamer_token: Mapped[str] = mapped_column(
+        String,
+        doc="Токен для получения видео трансляции",
+    )
 
     login: Mapped[str] = mapped_column(
-        String, ForeignKey("Login.login", ondelete="CASCADE"), nullable=False
+        String, ForeignKey("login.login", ondelete="CASCADE"), nullable=False
+    )
+
+    device: Mapped["Devices"] = relationship(
+        "Devices",
+        back_populates="camera",
+        uselist=False,  # Один к одному
+    )
+
+
+class DeviceType(Enum):
+    """Типы устройств"""
+
+    intercom = "intercom"
+    barrier = "barrier"
+
+
+class Devices(Base):
+    __tablename__ = "devices"
+
+    rt_id: Mapped[str] = mapped_column(
+        String,
+        doc="Id в системе rt",
+        unique=True,
+        nullable=False,
+    )
+    device_type: Mapped[DeviceType] = mapped_column(
+        SQLEnum(DeviceType),
+        doc="Тип девайса",
+        nullable=False,
+    )
+
+    login_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("login.login", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    camera_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("cameras.rt_id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    description: Mapped[str] = mapped_column(
+        String,
+    )
+
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+
+    name_by_user: Mapped[str] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    login: Mapped["Cameras"] = relationship(
+        Login,
+        back_populates="devices",
+        uselist=False,
+    )
+
+    camera: Mapped["Cameras | None"] = relationship(
+        "Cameras",
+        back_populates="device",
+        uselist=False,  # Один к одному
     )

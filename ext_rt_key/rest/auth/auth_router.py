@@ -4,7 +4,6 @@
 .. moduleauthor:: ilya Barinov <i-barinov@it-serv.ru>
 """
 
-from ext_rt_key.models.db import Login
 from ext_rt_key.models.request import BadResponse, GoodResponse
 from ext_rt_key.rest.common import RoutsCommon
 
@@ -18,7 +17,6 @@ class AuthRouter(RoutsCommon):
         """Функция назначения routs"""
         self._router.add_api_route("/request_code", self.request_code, methods=["POST"])
         self._router.add_api_route("/request_token", self.request_token, methods=["POST"])
-        self._router.add_api_route("/open_dor", self.open_dor, methods=["POST"])
 
     async def request_code(
         self,
@@ -47,25 +45,3 @@ class AuthRouter(RoutsCommon):
 
         self.logger.info("Сессия не найдена")
         return self.bad_response("Сессия не найдена")
-
-    async def open_dor(
-        self,
-        login: str,
-        # jwt: str,
-    ) -> GoodResponse | BadResponse:
-        """
-        Открытие устройство
-        На данном этапе 1 конкретного
-        """
-        # TODO: Пока временный метод для разработки
-        # В будующем в базе будут хранится устройство и login
-        # Проверяем что владелец jwt имеет доступ к этому методу пока проверку пропустим
-
-        rt_helper = self.rt_manger.add_helper(login)
-
-        if rt_helper:
-            self.logger.info("Устройство открыто")
-            return await rt_helper.open_device()
-
-        self.logger.info("Сессия не найдена")
-        return self.bad_response()
