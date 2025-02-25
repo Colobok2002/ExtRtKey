@@ -1,16 +1,54 @@
 services:
+  # Сервис базы данных PostgreSQL
   db:
-    image: postgres:16
-    container_name: postgres_db
+    image: postgres:latest
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    command: postgres -c 'max_connections=10000'
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Сервис приложения на Uvicorn с использованием Poetry
+  app:
+    build:
+      context: .
+      dockerfile: Bacend.Dockerfile
+    container_name: uvicorn_app
     restart: always
     ports:
-      - "5444:5432"
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: mydatabase
+      - "8080:8080"
+    networks:
+      - app_network
+
+  # Nginx Proxy Manager (NPM)
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx_proxy_manager
+    restart: always
+    ports:
+      - "80:80"       # HTTP доступ
+      - "81:81"       # Порт для панели управления NPM
+      - "443:443"     # HTTPS доступ
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+    networks:
+      - app_network
 
 volumes:
-  pg_data:
+  postgres_data:
+  npm_data:
+  npm_letsencrypt:
+
+networks:
+  app_network:

@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 from dependency_injector import containers, providers
-from pydantic import Field
+from pydantic import Field, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
 from rich.syntax import Syntax
@@ -22,9 +22,28 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
 
-    DB_URL: str = Field()
+    POSTGRES_USER: str = Field()
+    POSTGRES_PASSWORD: str = Field()
+    POSTGRES_DB: str = Field()
+    POSTGRES_HOST: str = Field()
+    POSTGRES_PORT: int = Field()
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    DB_URL: str | None = None
+
+    @field_validator("DB_URL", mode="before")
+    @staticmethod
+    def assemble_db_connection(_v: str, values: ValidationInfo) -> str:
+        """Собирает URL для подключения к PostgreSQL."""
+        return (
+            f"postgresql://{values.data['POSTGRES_USER']}:{values.data['POSTGRES_PASSWORD']}@"
+            f"{values.data['POSTGRES_HOST']}:{values.data['POSTGRES_PORT']}/{values.data['POSTGRES_DB']}"
+        )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="allow",
+    )
 
 
 class SensitiveFormatter(logging.Formatter):

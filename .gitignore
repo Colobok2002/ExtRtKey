@@ -174,3 +174,7 @@ cython_debug/
 .pypirc
 poetry.lock
 dev_alembic
+
+letsencrypt
+data
+postgres_data
