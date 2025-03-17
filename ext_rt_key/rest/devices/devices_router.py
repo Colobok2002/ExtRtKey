@@ -16,6 +16,7 @@ class DevicesRouter(RoutsCommon):
     def setup_routes(self) -> None:
         """Функция назначения маршрутов"""
         self._router.add_api_route("/load_devices", self.load_devices, methods=["POST"])
+        self._router.add_api_route("/get_cameras", self.get_cameras, methods=["GET"])
 
     async def load_devices(
         self,
@@ -37,4 +38,22 @@ class DevicesRouter(RoutsCommon):
             return await rt_helper.load_devices()
 
         self.logger.info("Сессия не найдена")
+        return self.bad_response()
+
+    async def get_cameras(
+        self,
+        jwt: str,
+    ) -> GoodResponse | BadResponse:
+        """Получение списка камер"""
+        user_id = self.get_user_id(jwt)
+
+        if not user_id:
+            return self.bad_response()
+
+        with self.db_helper.sessionmanager() as session:
+            logins = session.query(self.models.Login).filter(self.models.User.id == user_id).all()
+
+            cameras = [login.all_cameras for login in logins]
+
+            return self.good_response(data={"cameras": cameras})
         return self.bad_response()

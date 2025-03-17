@@ -108,11 +108,22 @@ class Login(Base):
         back_populates="login",
     )
 
+    cameras: Mapped[list["Cameras"]] = relationship(
+        "Cameras",
+        back_populates="login",
+        lazy="joined",  # Подгружает сразу, чтобы избежать "Lazy Loading"
+    )
+
     def is_expired(self) -> bool:
         """Проверяет, истёк ли токен"""
         if self.expires_at:
             return datetime.datetime.now(datetime.UTC) > self.expires_at
         return True
+
+    @property
+    def all_cameras(self) -> list[dict[str, Any]]:
+        """Возвращает все камеры в виде json"""
+        return [camera.to_json() for camera in self.cameras]
 
 
 class Cameras(Base):
@@ -142,8 +153,13 @@ class Cameras(Base):
         doc="Токен для получения видео трансляции",
     )
 
-    login: Mapped[str] = mapped_column(
-        String, ForeignKey("login.login", ondelete="CASCADE"), nullable=False
+    login_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("login.id", ondelete="CASCADE"), nullable=False
+    )
+
+    login: Mapped["Login"] = relationship(
+        "Login",
+        back_populates="cameras",
     )
 
     device: Mapped["Devices"] = relationship(
@@ -151,6 +167,16 @@ class Cameras(Base):
         back_populates="camera",
         uselist=False,  # Один к одному
     )
+
+    def to_json(self) -> dict[str, Any]:
+        """Получить словарь"""
+        return {
+            "rt_id": self.rt_id,
+            "archive_length": self.archive_length,
+            "screenshot_url_template": self.screenshot_url_template,
+            "screenshot_token": self.screenshot_token,
+            "streamer_token": self.streamer_token,
+        }
 
 
 class DeviceType(Enum):
@@ -175,9 +201,9 @@ class Devices(Base):
         nullable=False,
     )
 
-    login_id: Mapped[str] = mapped_column(
-        String,
-        ForeignKey("login.login", ondelete="CASCADE"),
+    login_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("login.id", ondelete="CASCADE"),
         nullable=False,
     )
 

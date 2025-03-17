@@ -12,9 +12,21 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from ext_rt_key.models import db as models
 from ext_rt_key.models.request import BadResponse, GoodResponse
 from ext_rt_key.rest.manager import RTManger
 from ext_rt_key.utils.db_helper import DBHelper
+
+
+class CustomAPIRouter(APIRouter):
+    """Расширенный APIRouter"""
+
+    def add_api_route(self, *args: Any, **kwargs: Any) -> None:
+        """Ext добавем параметр OPTIONS по умолчанию"""
+        if "methods" in kwargs and "OPTIONS" not in kwargs["methods"]:
+            kwargs["methods"].append("OPTIONS")
+
+        super().add_api_route(*args, **kwargs)
 
 
 class RoutsCommon(ABC):
@@ -32,10 +44,11 @@ class RoutsCommon(ABC):
         :param prefix: Префикс для всех маршрутов в этом роутере.
         :param tags: Теги, используемые для группировки маршрутов в документации.
         """
-        self._router = APIRouter(prefix=prefix, tags=tags)
+        self._router = CustomAPIRouter(prefix=prefix, tags=tags)
         self.logger = logger or getLogger(__name__)
         self.rt_manger = rt_manger
         self.db_helper = db_helper
+        self.models = models
 
     def add_route(self, path: str, endpoint: Callable[..., Any], method: str = "GET") -> None:
         """
@@ -91,3 +104,15 @@ class RoutsCommon(ABC):
             message=message,
             data=data,
         )
+
+    def get_user_id(self, jwt_token: str) -> int | None:
+        """Получает внутренний id user если он есть"""
+        with self.db_helper.sessionmanager() as session:
+            user_model = (
+                session.query(self.models.User)
+                .filter(self.models.User.jwt_token == jwt_token)
+                .first()
+            )
+            if user_model:
+                return user_model.id
+            return None

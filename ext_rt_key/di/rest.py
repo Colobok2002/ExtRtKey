@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from dependency_injector import containers, providers
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi_offline import FastAPIOffline
 from pydantic_settings import BaseSettings
 from sqlalchemy import create_engine
@@ -54,6 +55,14 @@ def init_rest_app(
 
     app: CustomFastAPIType = cast(
         CustomFastAPIType, FastAPIOffline(version=__version__, lifespan=lifespan)
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     for router in routers:

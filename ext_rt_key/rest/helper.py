@@ -13,7 +13,7 @@ from typing import Any
 import requests
 from sqlalchemy import and_
 
-from ext_rt_key.models.db import Cameras, Devices, DeviceType, Login, User
+from ext_rt_key.models import db as models
 from ext_rt_key.models.request import BadResponse, GoodResponse
 from ext_rt_key.utils.db_helper import DBHelper
 
@@ -110,18 +110,21 @@ class RTHelper:
         self.logger = logger or getLogger(__name__)
         self.auth_manager = AuthManager(db_helper)
         self.db_helper = db_helper
+        self.models = models
 
         self.init_auth_manager(self.login, self.auth_manager, self.db_helper)
 
-    @staticmethod
     def init_auth_manager(
+        self,
         login: str,
         auth_manager: AuthManager,
         db_helper: DBHelper,
     ) -> None:
         """Инициализация менеджера авторизации при инициализации класса"""
         with db_helper.sessionmanager() as session:
-            login_model = session.query(Login).filter(Login.login == login).first()
+            login_model = (
+                session.query(self.models.Login).filter(self.models.Login.login == login).first()
+            )
             if not login_model:
                 return None
             auth_manager.authorization_token = login_model.token
@@ -139,14 +142,16 @@ class RTHelper:
             URL_LOGIN, json=payload, headers=self.auth_manager.headers_process_auth
         )
 
+        response_data = response.json()
+
         if response.status_code == HTTPStatus.OK:
             token_auth = response.json().get("data", {}).get("accessToken")
             if token_auth:
                 with self.db_helper.sessionmanager() as session:
                     user = (
-                        session.query(User)
-                        .join(User.logins)
-                        .filter(Login.login == self.login)
+                        session.query(self.models.User)
+                        .join(self.models.User.logins)
+                        .filter(self.models.Login.login == self.login)
                         .first()
                     )
 
@@ -154,12 +159,12 @@ class RTHelper:
                         jwt = user.create_token(session=session)
                     else:
                         # TODO: Не срочно сделать так чоб время жизни токена rt сохранялось
-                        new_user = User()
+                        new_user = self.models.User()
                         session.add(new_user)
 
                         jwt = new_user.create_token(session=session)
 
-                        new_login = Login(
+                        new_login = self.models.Login(
                             login=self.login,
                             user=new_user,
                             token=token_auth,
@@ -173,21 +178,7 @@ class RTHelper:
                     data={"token": jwt},
                 )
 
-        # TODO: Обработка неправильный сообщений по типу не верный код
-        # print(response.json())
-        # input
-        # {"error": {"otpCode": {"invalidCode": {}}}}
-
-        # {
-        #     "data": {
-        #         "accessToken": "...",
-        #         "expiredAt": "2026-02-19T20:40:48Z",
-        #     }
-        # }
-
-        # token_auth = response.json().get("data", {}).get("accessToken")
-        # self.logger.info(token_auth)
-        return BadResponse()
+        return BadResponse(message=response_data.get("message"))
 
     async def request_code(
         self,
@@ -209,10 +200,6 @@ class RTHelper:
         )
 
         if init_auth_session.status_code == HTTPStatus.OK:
-            self.logger.info(init_auth_session.status_code)
-            self.logger.info(init_auth_session.json())
-
-            # TODO : Доделать проверку на валидность
             self.auth_manager.code_id = init_auth_session.json().get("data", {}).get("codeId")
             if self.auth_manager.code_id:
                 # -> "{data: {codeId: 8tDNvd7m03sKgHvY6XMGJ7HRPn5cRRFMYmmuSTmeH2NTk8SeVSfLhpcWJ2jLUVrHyEmQQN2sVfwOqsfstGy828wO2B4nJbMMd4nh,timeout: 180}}"  # noqa
@@ -241,36 +228,52 @@ class RTHelper:
             # -> {"error": {"sso": {"intervalExceeded": {}}}}
             if response_data.get("error", {}).get("sso"):
                 return BadResponse(message="Слишком много запросов, немного подождите")
-        return BadResponse()
+        return BadResponse(message=response_data.get("message"))
 
     async def load_devices(self) -> GoodResponse | BadResponse:
         """Загрузка всех устройств"""
         status_dict: dict[str, bool] = {}
-        status_dict["CAMERAS"] = isinstance(await self.get_cameras(), GoodResponse)
+        status_dict["CAMERAS"] = isinstance(await self._download_cameras(), GoodResponse)
         status_dict["INTERCOM"] = isinstance(
-            await self._get_devices(URL_GET_INTERCOM), GoodResponse
+            await self._download_devices(URL_GET_INTERCOM), GoodResponse
         )
-        status_dict["BARRIER"] = isinstance(await self._get_devices(URL_GET_BARRIER), GoodResponse)
+        status_dict["BARRIER"] = isinstance(
+            await self._download_devices(URL_GET_BARRIER), GoodResponse
+        )
 
         return GoodResponse(
             message="Данные успешно обновлены",
             data=status_dict,
         )
 
-    async def get_cameras(self) -> GoodResponse | BadResponse:
+    @property
+    def login_id(self) -> int:
+        """Получение login id"""
+        with self.db_helper.sessionmanager() as session:
+            login: models.Login | None = (
+                session.query(self.models.Login)
+                .filter(self.models.Login.login == self.login)
+                .first()
+            )
+            return login.id  # type: ignore
+
+    async def _download_cameras(self) -> GoodResponse | BadResponse:
         """Выгрузка в базу всех камер"""
         response = requests.get(
             URL_GET_ALL_CAMERAS,
             headers=self.auth_manager.headers_auth,
         )
-
         if response.status_code == HTTPStatus.OK:
             response_data = response.json().get("data").get("items")
 
             with self.db_helper.sessionmanager() as session:
                 for camera in response_data:
                     id_ = camera.get("id", {})
-                    camera_model = session.query(Cameras).filter(Cameras.rt_id == id_).first()
+                    camera_model = (
+                        session.query(self.models.Cameras)
+                        .filter(self.models.Cameras.rt_id == id_)
+                        .first()
+                    )
 
                     if camera_model:
                         camera_model.archive_length = camera.get("archive_length")
@@ -279,13 +282,13 @@ class RTHelper:
                         camera_model.streamer_token = camera.get("streamer_token", {})
 
                     else:
-                        new_camera = Cameras(
+                        new_camera = self.models.Cameras(
                             archive_length=camera.get("archive_length"),
                             rt_id=id_,
                             screenshot_url_template=camera.get("screenshot_url_template"),
                             screenshot_token=camera.get("screenshot_token"),
                             streamer_token=camera.get("streamer_token", {}),
-                            login=self.login,
+                            login_id=self.login_id,
                         )
                         session.add(new_camera)
                 session.commit()
@@ -294,24 +297,23 @@ class RTHelper:
 
         return BadResponse(message="")
 
-    async def _get_devices(
+    async def _download_devices(
         self,
         target_url: str,
     ) -> GoodResponse | BadResponse:
         """Выгрузка домофонов"""
-        # Актуализируем камеры
-        await self.get_cameras()
+        await self._download_cameras()
         response = requests.get(target_url, headers=self.auth_manager.headers_auth)
         if response.status_code == HTTPStatus.OK:
             intercoms = response.json().get("data", {}).get("devices", [])
             with self.db_helper.sessionmanager() as session:
                 for intercom in intercoms:
                     intercom_model = (
-                        session.query(Devices)
+                        session.query(self.models.Devices)
                         .filter(
                             and_(
-                                Devices.rt_id == intercom.get("id"),
-                                Devices.login_id == self.login,
+                                self.models.Devices.rt_id == intercom.get("id"),
+                                self.models.Devices.login_id == self.login_id,
                             )
                         )
                         .first()
@@ -322,10 +324,10 @@ class RTHelper:
                         if not intercom_model.is_favorite and intercom.get("is_favorite"):
                             intercom_model.is_favorite = intercom.get("is_favorite")
                     else:
-                        intercom_model = Devices(
+                        intercom_model = self.models.Devices(
                             rt_id=intercom.get("id"),
-                            device_type=DeviceType(intercom.get("device_type")),
-                            login_id=self.login,
+                            device_type=self.models.DeviceType(intercom.get("device_type")),
+                            login_id=self.login_id,
                             camera_id=intercom.get("camera_id"),
                             description=intercom.get("description"),
                             is_favorite=intercom.get("is_favorite"),

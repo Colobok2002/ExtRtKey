@@ -1,4 +1,13 @@
 services:
+  focalboard:
+    image: mattermost/focalboard
+    container_name: focalboard
+    restart: always
+    ports:
+      - "82:8000"
+    volumes:
+      - focalboard_data:/var/lib/focalboard
+      
   # Сервис базы данных PostgreSQL
   db:
     image: postgres:latest
@@ -45,10 +54,12 @@ services:
     networks:
       - app_network
 
+
 volumes:
   postgres_data:
   npm_data:
   npm_letsencrypt:
+  focalboard_data:
 
 networks:
   app_network:
