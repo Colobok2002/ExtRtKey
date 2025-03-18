@@ -28,6 +28,10 @@ dependencies = [
     "cryptography (>=44.0.1,<45.0.0)",
     "passlib (>=1.7.4,<2.0.0)",
     "websockets (>=15.0,<16.0)",
+    "types-pyyaml (>=6.0.12.20241230,<7.0.0.0)",
+    "python-logstash-async (>=4.0.2,<5.0.0)",
+    "opentelemetry-api (>=1.31.0,<2.0.0)",
+    "opentelemetry-sdk (>=1.31.0,<2.0.0)",
 ]
 
 
@@ -51,7 +55,7 @@ exclude = [
     "tests",
     "versioneer_docker.py",
     "versioneer.py",
-    
+
 ]
 
 # включить строгую типизацию
@@ -85,7 +89,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["yaml"]
+module = ["yaml", "logstash_async.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

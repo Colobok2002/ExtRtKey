@@ -5,6 +5,7 @@
 """
 
 import logging
+from logging import Logger
 from typing import Any
 
 import yaml
@@ -14,7 +15,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
 from rich.syntax import Syntax
 
-from ext_rt_key import __appname__
+from ext_rt_key import __appname__, __version__
+from ext_rt_key.utils.logger import extend_log_record, get_logger
+from ext_rt_key.utils.logger.handlers import StderrHandler, StdoutHandler
 
 
 class Settings(BaseSettings):
@@ -100,15 +103,36 @@ class SensitiveFormatter(logging.Formatter):
         return ""
 
 
-def setup_logger(log_level: str) -> logging.Logger:
-    """Настройка логгера с YAML-форматированием и поддержкой dynamic extra."""
-    logger = logging.getLogger(__appname__)
-    logger.setLevel(log_level.upper())
+def init_logger(
+    loglevel: str,
+    app_name: str,
+    app_ver: str,
+    logstash_host: str | None = None,
+    logstash_port: int = 5959,
+    logstash_index: str | None = None,
+) -> Logger:
+    """
+    Инициализация логгера
 
-    handler = logging.StreamHandler()
-    handler.setFormatter(SensitiveFormatter())
+    :param loglevel: Уровень логирования
+    :param app_name: Наименование приложения
+    :param app_ver: Версия приложения
+    :param logstash_host: Адрес Logstash сервера
+    :param logstash_port: Порт Logstash сервера
+    :param logstash_index: Индекс, в который будет выгружен лог
+    """
+    if not logstash_index:
+        logstash_index = "pybeat"
 
-    logger.addHandler(handler)
+    logger = get_logger(app_name)
+
+    extend_log_record(app_name=app_name, app_ver=app_ver)
+
+    logger.setLevel(level=loglevel.upper())
+
+    logger.addHandler(StdoutHandler())
+    logger.addHandler(StderrHandler())
+
     return logger
 
 
@@ -116,4 +140,9 @@ class CommonDI(containers.DeclarativeContainer):
     """Базовый DI-контейнер"""
 
     settings = providers.Singleton(Settings)
-    logger = providers.Singleton(setup_logger, settings.provided.LOG_LEVEL)
+    logger = providers.Singleton(
+        init_logger,
+        loglevel=settings.provided.LOG_LEVEL,
+        app_name=__appname__,
+        app_ver=__version__,
+    )

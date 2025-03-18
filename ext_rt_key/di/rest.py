@@ -84,7 +84,7 @@ def init_rest_app(
 
         return response
 
-    logger.info("Зарегистрированные routs", extra={"routs": app.router.routes})
+    logger.info("Зарегистрированные routs", extra={"routs": str(app.router.routes)})
     return app
 
 
