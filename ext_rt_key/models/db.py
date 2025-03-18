@@ -103,15 +103,16 @@ class Login(Base):
         uselist=False,
     )
 
-    devices: Mapped["Devices"] = relationship(
+    devices: Mapped[list["Devices"]] = relationship(
         "Devices",
         back_populates="login",
+        lazy="joined",
     )
 
     cameras: Mapped[list["Cameras"]] = relationship(
         "Cameras",
         back_populates="login",
-        lazy="joined",  # Подгружает сразу, чтобы избежать "Lazy Loading"
+        lazy="joined",
     )
 
     def is_expired(self) -> bool:
@@ -124,6 +125,25 @@ class Login(Base):
     def all_cameras(self) -> list[dict[str, Any]]:
         """Возвращает все камеры в виде json"""
         return [camera.to_json() for camera in self.cameras]
+
+    @property
+    def all_devices(self) -> list[dict[str, Any]]:
+        """Возвращает все устройства в виде json"""
+        return [device.to_json() for device in self.devices]
+
+    @property
+    def barrier(self) -> list[dict[str, Any]]:
+        """Возвращает все устройства типа 'barrier' в виде JSON"""
+        return [
+            device.to_json() for device in self.devices if device.device_type == DeviceType.barrier
+        ]
+
+    @property
+    def intercom(self) -> list[dict[str, Any]]:
+        """Возвращает все устройства типа 'intercom' в виде JSON"""
+        return [
+            device.to_json() for device in self.devices if device.device_type == DeviceType.intercom
+        ]
 
 
 class Cameras(Base):
@@ -171,6 +191,7 @@ class Cameras(Base):
     def to_json(self) -> dict[str, Any]:
         """Получить словарь"""
         return {
+            "id": self.id,
             "rt_id": self.rt_id,
             "archive_length": self.archive_length,
             "screenshot_url_template": self.screenshot_url_template,
@@ -238,3 +259,17 @@ class Devices(Base):
         back_populates="device",
         uselist=False,  # Один к одному
     )
+
+    def to_json(self) -> dict[str, Any]:
+        """Получить словарь"""
+        return {
+            "id": self.id,
+            "rt_id": self.rt_id,
+            "device_type": self.device_type.value,  # Если это Enum
+            "login_id": self.login_id,
+            "camera_id": self.camera_id,
+            "description": self.description,
+            "is_favorite": self.is_favorite,
+            "name_by_user": self.name_by_user,
+            "camera": self.camera.to_json() if self.camera else None,
+        }

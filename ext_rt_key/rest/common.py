@@ -11,6 +11,7 @@ from logging import getLogger, Logger
 from typing import Any
 
 from fastapi import APIRouter
+from sqlalchemy import and_
 
 from ext_rt_key.models import db as models
 from ext_rt_key.models.request import BadResponse, GoodResponse
@@ -105,7 +106,10 @@ class RoutsCommon(ABC):
             data=data,
         )
 
-    def get_user_id(self, jwt_token: str) -> int | None:
+    def get_user_id(
+        self,
+        jwt_token: str,
+    ) -> int | None:
         """Получает внутренний id user если он есть"""
         with self.db_helper.sessionmanager() as session:
             user_model = (
@@ -116,3 +120,50 @@ class RoutsCommon(ABC):
             if user_model:
                 return user_model.id
             return None
+
+    def get_user_logins(
+        self,
+        jwt_token: str,
+    ) -> list[str] | None:
+        """Получает внутренний id user если он есть"""
+        with self.db_helper.sessionmanager() as session:
+            user_logins_model = (
+                session.query(self.models.Login)
+                .join(self.models.User, self.models.User.id == self.models.Login.user_id)
+                .filter(self.models.User.jwt_token == jwt_token)
+                .all()
+            )
+            return [user.login for user in user_logins_model]
+
+    def get_user_login(
+        self,
+        login_id: int,
+    ) -> str | None:
+        """Возвращает login по его Id"""
+        with self.db_helper.sessionmanager() as session:
+            user_login_model: models.Login | None = session.query(self.models.Login).get(login_id)
+            if user_login_model:
+                return user_login_model.login
+            return None
+
+    def access_check(
+        self,
+        jwt_token: str,
+        login_id: int,
+    ) -> bool:
+        """Проверяет доступ к логину"""
+        with self.db_helper.sessionmanager() as session:
+            user_id = self.get_user_id(jwt_token)
+            if not user_id:
+                return False
+            login = (
+                session.query(self.models.Login)
+                .filter(
+                    and_(
+                        self.models.Login.user_id == user_id,
+                        self.models.Login.id == login_id,
+                    )
+                )
+                .first()
+            )
+            return login is not None
